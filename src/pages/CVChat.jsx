@@ -7,13 +7,45 @@ export const CVChat = () => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Gestion dynamique des voix
+  const [voices, setVoices] = useState([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState("");
+
   const recognitionRef = useRef(null);
   const isSessionActiveRef = useRef(isSessionActive);
 
-  // Synchroniser la ref avec l'état pour les callbacks asynchrones
+  // Synchroniser la ref avec l'état
   useEffect(() => {
     isSessionActiveRef.current = isSessionActive;
   }, [isSessionActive]);
+
+  // Chargement et gestion des voix Web Speech API
+  useEffect(() => {
+    const loadVoices = () => {
+      if (!("speechSynthesis" in window)) return;
+
+      const availableVoices = window.speechSynthesis.getVoices();
+      if (availableVoices.length > 0) {
+        setVoices(availableVoices);
+
+        // Sélection par défaut : privilégier une voix française
+        setSelectedVoiceURI((prev) => {
+          if (prev) return prev; // conserve le choix déjà fait
+          const defaultFr = availableVoices.find((v) =>
+            v.lang.startsWith("fr")
+          );
+          return defaultFr ? defaultFr.voiceURI : availableVoices[0].voiceURI;
+        });
+      }
+    };
+
+    loadVoices();
+
+    // Nécessaire pour Chrome/Safari/Edge où les voix se chargent de manière asynchrone
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
 
   // Initialisation de la reconnaissance vocale
   useEffect(() => {
@@ -42,9 +74,14 @@ export const CVChat = () => {
     }
   }, []);
 
-  // Relancer l'écoute vocale automatiquement si la session est toujours active
+  // Relancer l'écoute vocale automatiquement
   const startListening = () => {
-    if (recognitionRef.current && isSessionActiveRef.current && !isSpeaking && !isLoading) {
+    if (
+      recognitionRef.current &&
+      isSessionActiveRef.current &&
+      !isSpeaking &&
+      !isLoading
+    ) {
       try {
         recognitionRef.current.start();
       } catch (e) {
@@ -53,21 +90,33 @@ export const CVChat = () => {
     }
   };
 
-  // Synthèse vocale automatique
+  // Synthèse vocale avec voix personnalisée
   const speakText = (text) => {
     if (!("speechSynthesis" in window)) return;
 
     window.speechSynthesis.cancel();
     const cleanText = text.replace(/\*\*/g, "").replace(/#/g, "");
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = "fr-FR";
+
+    // Appliquer la voix sélectionnée par l'utilisateur
+    if (selectedVoiceURI) {
+      const chosenVoice = voices.find((v) => v.voiceURI === selectedVoiceURI);
+      if (chosenVoice) {
+        utterance.voice = chosenVoice;
+        utterance.lang = chosenVoice.lang;
+      } else {
+        utterance.lang = "fr-FR";
+      }
+    } else {
+      utterance.lang = "fr-FR";
+    }
+
     utterance.rate = 1.0;
 
     utterance.onstart = () => setIsSpeaking(true);
 
     utterance.onend = () => {
       setIsSpeaking(false);
-      // Relance l'écoute une fois que l'IA a fini de parler
       if (isSessionActiveRef.current) {
         setTimeout(startListening, 300);
       }
@@ -105,16 +154,22 @@ export const CVChat = () => {
         content,
       }));
 
-      const response = await fetch("https://backend-cv-ai.vercel.app/api/chat-cv", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: apiMessages }),
-      });
+      const response = await fetch(
+        "https://backend-cv-ai.vercel.app/api/chat-cv",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: apiMessages }),
+        }
+      );
 
       const data = await response.json();
 
       if (data.reply) {
-        setMessages([...updatedMessages, { role: "assistant", content: data.reply }]);
+        setMessages([
+          ...updatedMessages,
+          { role: "assistant", content: data.reply },
+        ]);
         speakText(data.reply);
       }
     } catch (error) {
@@ -150,14 +205,10 @@ export const CVChat = () => {
 
   return (
     <div className="flex flex-col items-center justify-between min-h-[100dvh] bg-[#F4F4F6] text-slate-800 p-4 sm:p-6 font-sans select-none box-border">
-      
-      {/* Zone centrale : Uniquement l'Orbe et les explications */}
+      {/* Zone centrale */}
       <main className="flex-1 flex flex-col items-center justify-center max-w-xl w-full text-center py-4">
-        
-        {/* L'Orbe Violet Style Ruphin */}
+        {/* L'Orbe Violet */}
         <div className="relative flex items-center justify-center my-6 sm:my-10">
-          
-          {/* Ondes de voix quand l'IA parle */}
           {isSpeaking && (
             <>
               <div className="absolute w-60 h-60 sm:w-80 sm:h-80 rounded-full bg-purple-300/40 animate-ping duration-1000"></div>
@@ -165,12 +216,10 @@ export const CVChat = () => {
             </>
           )}
 
-          {/* Animation lors de l'écoute ou du traitement */}
           {(isListening || isLoading) && (
             <div className="absolute w-56 h-56 sm:w-72 sm:h-72 rounded-full border-2 border-dashed border-purple-500/60 animate-spin"></div>
           )}
 
-          {/* Sphère principale */}
           <div
             className={`relative w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-indigo-300 via-purple-400 to-purple-600 shadow-xl overflow-hidden transition-all duration-500 flex items-center justify-center ${
               isSpeaking
@@ -178,7 +227,6 @@ export const CVChat = () => {
                 : "hover:scale-[1.02]"
             }`}
           >
-            {/* Motif de vague de fond */}
             <svg
               className="absolute bottom-0 w-full opacity-40 text-white/40"
               viewBox="0 0 1440 320"
@@ -197,10 +245,9 @@ export const CVChat = () => {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-  Lancez la discussion et parlez naturellement. Modifiez les options vocales dans
-  le menu de configuration.
-</p>
-
+          Lancez la discussion pour explorer mon CV et mes réalisations à la
+          voix. Options vocales disponibles dans le menu.
+        </p>
       </main>
 
       {/* Trait de séparation */}
@@ -208,35 +255,72 @@ export const CVChat = () => {
 
       {/* Barre de contrôle du bas */}
       <footer className="bg-white rounded-2xl shadow-lg border border-slate-100 px-3 sm:px-4 py-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 max-w-lg w-full">
-        
-        {/* Statut du Micro / Sélection */}
-        <div className="flex items-center space-x-1.5 sm:space-x-2 text-slate-600 text-xs font-medium cursor-pointer hover:text-slate-900 px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors max-w-[60%] sm:max-w-none">
-          <svg className="w-4 h-4 text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+        {/* Sélecteur de Voix Dynamique */}
+        <div className="flex items-center space-x-1.5 sm:space-x-2 text-slate-600 text-xs font-medium px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors max-w-[65%] sm:max-w-none">
+          <svg
+            className="w-4 h-4 text-slate-500 flex-shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+            />
           </svg>
-          <span className="truncate text-[11px] sm:text-xs">
-            {isLoading
-              ? "Réflexion..."
-              : isSpeaking
-              ? "Ruphin parle..."
-              : isListening
-              ? "Écoute en cours..."
-              : "Par défaut – Par défaut..."}
-          </span>
-          <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
+
+          {/* Affichage du Statut d'état OU du Menu Déroulant */}
+          {isLoading ? (
+            <span className="text-[11px] sm:text-xs text-purple-600 font-semibold animate-pulse">
+              Réflexion...
+            </span>
+          ) : isSpeaking ? (
+            <span className="text-[11px] sm:text-xs text-indigo-600 font-semibold animate-pulse">
+              Ruphin parle...
+            </span>
+          ) : isListening ? (
+            <span className="text-[11px] sm:text-xs text-emerald-600 font-semibold animate-pulse">
+              Écoute en cours...
+            </span>
+          ) : (
+            <select
+              value={selectedVoiceURI}
+              onChange={(e) => setSelectedVoiceURI(e.target.value)}
+              className="bg-transparent text-[11px] sm:text-xs text-slate-700 outline-none cursor-pointer max-w-[140px] sm:max-w-[190px] truncate"
+            >
+              {voices.length === 0 && (
+                <option value="">Chargement des voix...</option>
+              )}
+              {voices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name} ({voice.lang})
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Boutons d'action */}
         <div className="flex items-center space-x-2 ml-auto">
-          <button 
+          <button
             type="button"
             className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
             title="Désactiver la vidéo/caméra"
           >
-            <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <svg
+              className="w-4 h-4 sm:w-5 sm:h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
             </svg>
           </button>
 
@@ -248,15 +332,21 @@ export const CVChat = () => {
                 : "bg-purple-700 hover:bg-purple-800 shadow-purple-200"
             }`}
           >
-            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current" viewBox="0 0 24 24">
-              <path d="M12 3v18m-4-14v10m8-10v10m-12-6v2m16-2v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            <svg
+              className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current"
+              viewBox="0 0 24 24"
+            >
+              <path
+                d="M12 3v18m-4-14v10m8-10v10m-12-6v2m16-2v2"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
             </svg>
             <span>{isSessionActive ? "Arrêter" : "Commencer"}</span>
           </button>
         </div>
-
       </footer>
-
     </div>
   );
 };
