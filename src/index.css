@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-dark: #f8f4ee;
+  --color-navy: #ffffff;
+  --color-navy-light: #fff8f2;
+  --color-navy-border: #eadfd2;
+  --color-terracotta: #c96f4a;
+  --color-terracotta-dark: #a9583a;
+  --color-terracotta-light: #e89a78;
+}
+
+body {
+  margin: 0;
+  background: var(--color-navy-dark);
+  color: #1f2937;
+}
