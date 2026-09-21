@@ -154,7 +154,7 @@ export const CVChat = () => {
       {/* Zone centrale : Uniquement l'Orbe et les explications */}
       <main className="flex-1 flex flex-col items-center justify-center max-w-xl w-full text-center py-4">
         
-        {/* L'Orbe Violet Style Astra */}
+        {/* L'Orbe Violet Style Ruphin */}
         <div className="relative flex items-center justify-center my-6 sm:my-10">
           
           {/* Ondes de voix quand l'IA parle */}
@@ -193,14 +193,13 @@ export const CVChat = () => {
 
         {/* Titre et Explications */}
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 sm:mb-3 tracking-tight">
-          Parlons-en
+          Discute avec Moi
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-          Cliquez pour démarrer une nouvelle session. L’assistant écoute et
-          répond. Mettez à jour les paramètres vocaux à l’aide de la configuration
-          de conversation.
-        </p>
+  Lancez la discussion et parlez naturellement. Modifiez les options vocales dans
+  le menu de configuration.
+</p>
 
       </main>
 
@@ -219,7 +218,7 @@ export const CVChat = () => {
             {isLoading
               ? "Réflexion..."
               : isSpeaking
-              ? "Astra parle..."
+              ? "Ruphin parle..."
               : isListening
               ? "Écoute en cours..."
               : "Par défaut – Par défaut..."}
