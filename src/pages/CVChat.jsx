@@ -231,13 +231,18 @@ export const CVChat = () => {
 
   // Gérer la session active
   const toggleSession = () => {
-    // Activer l'audio iOS immédiatement lors du clic utilisateur
     unlockAudioOniOS();
 
     if (!isSessionActive) {
       setIsSessionActive(true);
       isSessionActiveRef.current = true;
-      startListening();
+
+      // Message de présentation au lancement de la conversation
+      const welcomeText =
+        "Bonjour ! Je suis l'assistant virtuel de Ruphin. J'ai été conçu pour répondre à toutes vos questions sur son parcours professionnel, ses compétences et ses projets. Comment puis-je vous aider aujourd'hui ?";
+
+      setMessages([{ role: "assistant", content: welcomeText }]);
+      speakText(welcomeText);
     } else {
       setIsSessionActive(false);
       isSessionActiveRef.current = false;
@@ -298,9 +303,9 @@ export const CVChat = () => {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-  Posez vos questions pour découvrir mon parcours. Dites <strong>"Stop"</strong> ou
-  cliquez sur la sphère pour interrompre l'assistant à tout moment.
-</p>
+          Posez vos questions pour découvrir mon parcours. Dites <strong>"Stop"</strong> ou
+          cliquez sur la sphère pour interrompre l'assistant à tout moment.
+        </p>
       </main>
 
       {/* Trait de séparation */}
