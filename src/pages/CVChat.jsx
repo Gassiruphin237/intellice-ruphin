@@ -24,7 +24,16 @@ export const CVChat = () => {
     isSpeakingRef.current = isSpeaking;
   }, [isSpeaking]);
 
-  // Chargement des voix
+  // Hack Safari iOS pour débloquer l'audio au premier clic
+  const unlockAudioOniOS = () => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      const silentUtterance = new SpeechSynthesisUtterance("");
+      window.speechSynthesis.speak(silentUtterance);
+    }
+  };
+
+  // Chargement des voix Web Speech API
   useEffect(() => {
     const loadVoices = () => {
       if (!("speechSynthesis" in window)) return;
@@ -57,14 +66,14 @@ export const CVChat = () => {
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = true; // Écoute continue pour intercepter "Stop"
+      recognition.continuous = true;
       recognition.interimResults = false;
       recognition.lang = "fr-FR";
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => {
         setIsListening(false);
-        // Relancer si la session est toujours active et qu'on ne parle pas
+        // Relancer si la session est active et que l'IA ne parle pas
         if (isSessionActiveRef.current && !isSpeakingRef.current) {
           try {
             recognition.start();
@@ -78,7 +87,7 @@ export const CVChat = () => {
           .trim()
           .toLowerCase();
 
-        // Mots-clés d'interruption instantanée
+        // Mots-clés pour stopper immédiatement
         const stopKeywords = [
           "stop",
           "arrête",
@@ -97,7 +106,7 @@ export const CVChat = () => {
           return;
         }
 
-        // Envoi du message uniquement si l'IA ne parle pas déjà
+        // Ignorer ce qui est capté si l'IA parle déjà pour éviter de boucler sur sa propre voix
         if (userText && isSessionActiveRef.current && !isSpeakingRef.current) {
           handleSendMessage(userText);
         }
@@ -149,7 +158,7 @@ export const CVChat = () => {
       utterance.lang = "fr-FR";
     }
 
-    utterance.rate = 1.05; // Légèrement accéléré pour plus de dynamisme
+    utterance.rate = 1.05;
 
     utterance.onstart = () => setIsSpeaking(true);
 
@@ -195,13 +204,21 @@ export const CVChat = () => {
       );
 
       const data = await response.json();
+      const botReply =
+        data.reply ||
+        data.message ||
+        data.text ||
+        data.choices?.[0]?.message?.content;
 
-      if (data.reply) {
+      if (botReply) {
         setMessages([
           ...updatedMessages,
-          { role: "assistant", content: data.reply }
+          { role: "assistant", content: botReply }
         ]);
-        speakText(data.reply);
+        speakText(botReply);
+      } else {
+        console.error("Format de réponse non reconnu :", data);
+        speakText("Désolé, je n'ai pas pu lire la réponse.");
       }
     } catch (error) {
       console.error("Erreur API :", error);
@@ -214,6 +231,9 @@ export const CVChat = () => {
 
   // Gérer la session active
   const toggleSession = () => {
+    // Activer l'audio iOS immédiatement lors du clic utilisateur
+    unlockAudioOniOS();
+
     if (!isSessionActive) {
       setIsSessionActive(true);
       isSessionActiveRef.current = true;
@@ -278,7 +298,7 @@ export const CVChat = () => {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-          Posez vos questions pour découvrir mon parcours. Dites **"Stop"** ou
+          Posez vos questions pour découvrir mon parcours. Dites <br>Stop</br> ou
           cliquez sur la sphère pour interrompre l'assistant à tout moment.
         </p>
       </main>
