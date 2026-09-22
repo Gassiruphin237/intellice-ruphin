@@ -298,9 +298,9 @@ export const CVChat = () => {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-          Posez vos questions pour découvrir mon parcours. Dites <br>Stop</br> ou
-          cliquez sur la sphère pour interrompre l'assistant à tout moment.
-        </p>
+  Posez vos questions pour découvrir mon parcours. Dites <strong>"Stop"</strong> ou
+  cliquez sur la sphère pour interrompre l'assistant à tout moment.
+</p>
       </main>
 
       {/* Trait de séparation */}
