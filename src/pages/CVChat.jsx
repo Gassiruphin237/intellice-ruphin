@@ -13,13 +13,18 @@ export const CVChat = () => {
 
   const recognitionRef = useRef(null);
   const isSessionActiveRef = useRef(isSessionActive);
+  const isSpeakingRef = useRef(isSpeaking);
 
-  // Synchroniser la ref avec l'état
+  // Synchroniser les refs pour les callbacks
   useEffect(() => {
     isSessionActiveRef.current = isSessionActive;
   }, [isSessionActive]);
 
-  // Chargement et gestion des voix Web Speech API
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  // Chargement des voix
   useEffect(() => {
     const loadVoices = () => {
       if (!("speechSynthesis" in window)) return;
@@ -28,9 +33,8 @@ export const CVChat = () => {
       if (availableVoices.length > 0) {
         setVoices(availableVoices);
 
-        // Sélection par défaut : privilégier une voix française
         setSelectedVoiceURI((prev) => {
-          if (prev) return prev; // conserve le choix déjà fait
+          if (prev) return prev;
           const defaultFr = availableVoices.find((v) =>
             v.lang.startsWith("fr")
           );
@@ -41,7 +45,6 @@ export const CVChat = () => {
 
     loadVoices();
 
-    // Nécessaire pour Chrome/Safari/Edge où les voix se chargent de manière asynchrone
     if (typeof window !== "undefined" && window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
     }
@@ -54,18 +57,48 @@ export const CVChat = () => {
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = true; // Écoute continue pour intercepter "Stop"
       recognition.interimResults = false;
       recognition.lang = "fr-FR";
 
       recognition.onstart = () => setIsListening(true);
       recognition.onend = () => {
         setIsListening(false);
+        // Relancer si la session est toujours active et qu'on ne parle pas
+        if (isSessionActiveRef.current && !isSpeakingRef.current) {
+          try {
+            recognition.start();
+          } catch (e) {}
+        }
       };
 
       recognition.onresult = (event) => {
-        const userText = event.results[0][0].transcript;
-        if (userText && isSessionActiveRef.current) {
+        const lastResultIndex = event.results.length - 1;
+        const userText = event.results[lastResultIndex][0].transcript
+          .trim()
+          .toLowerCase();
+
+        // Mots-clés d'interruption instantanée
+        const stopKeywords = [
+          "stop",
+          "arrête",
+          "arrete",
+          "tais-toi",
+          "pause",
+          "silence",
+          "stoppe"
+        ];
+        const hasStopCommand = stopKeywords.some((word) =>
+          userText.includes(word)
+        );
+
+        if (hasStopCommand) {
+          stopSpeaking();
+          return;
+        }
+
+        // Envoi du message uniquement si l'IA ne parle pas déjà
+        if (userText && isSessionActiveRef.current && !isSpeakingRef.current) {
           handleSendMessage(userText);
         }
       };
@@ -74,31 +107,36 @@ export const CVChat = () => {
     }
   }, []);
 
-  // Relancer l'écoute vocale automatiquement
-  const startListening = () => {
-    if (
-      recognitionRef.current &&
-      isSessionActiveRef.current &&
-      !isSpeaking &&
-      !isLoading
-    ) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        // Ignorer si déjà en cours de démarrage
-      }
+  // Couper la parole
+  const stopSpeaking = () => {
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
     }
   };
 
-  // Synthèse vocale avec voix personnalisée
+  // Démarrer l'écoute
+  const startListening = () => {
+    if (recognitionRef.current && isSessionActiveRef.current) {
+      try {
+        recognitionRef.current.start();
+      } catch (e) {}
+    }
+  };
+
+  // Lecture vocale
   const speakText = (text) => {
     if (!("speechSynthesis" in window)) return;
 
-    window.speechSynthesis.cancel();
-    const cleanText = text.replace(/\*\*/g, "").replace(/#/g, "");
+    stopSpeaking();
+
+    const cleanText = text
+      .replace(/\*\*/g, "")
+      .replace(/#/g, "")
+      .replace(/https?:\/\/\S+/g, "");
+
     const utterance = new SpeechSynthesisUtterance(cleanText);
 
-    // Appliquer la voix sélectionnée par l'utilisateur
     if (selectedVoiceURI) {
       const chosenVoice = voices.find((v) => v.voiceURI === selectedVoiceURI);
       if (chosenVoice) {
@@ -111,35 +149,28 @@ export const CVChat = () => {
       utterance.lang = "fr-FR";
     }
 
-    utterance.rate = 1.0;
+    utterance.rate = 1.05; // Légèrement accéléré pour plus de dynamisme
 
     utterance.onstart = () => setIsSpeaking(true);
 
     utterance.onend = () => {
       setIsSpeaking(false);
       if (isSessionActiveRef.current) {
-        setTimeout(startListening, 300);
+        startListening();
       }
     };
 
     utterance.onerror = () => {
       setIsSpeaking(false);
       if (isSessionActiveRef.current) {
-        setTimeout(startListening, 300);
+        startListening();
       }
     };
 
     window.speechSynthesis.speak(utterance);
   };
 
-  const stopSpeaking = () => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-    }
-  };
-
-  // Traitement et envoi de la voix
+  // Traitement et envoi vers le backend
   const handleSendMessage = async (text) => {
     stopSpeaking();
     setIsLoading(true);
@@ -151,7 +182,7 @@ export const CVChat = () => {
     try {
       const apiMessages = updatedMessages.map(({ role, content }) => ({
         role,
-        content,
+        content
       }));
 
       const response = await fetch(
@@ -159,7 +190,7 @@ export const CVChat = () => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: apiMessages }),
+          body: JSON.stringify({ messages: apiMessages })
         }
       );
 
@@ -168,29 +199,25 @@ export const CVChat = () => {
       if (data.reply) {
         setMessages([
           ...updatedMessages,
-          { role: "assistant", content: data.reply },
+          { role: "assistant", content: data.reply }
         ]);
         speakText(data.reply);
       }
     } catch (error) {
       console.error("Erreur API :", error);
-      const errorMsg = "Désolé, une erreur est survenue lors de la connexion.";
+      const errorMsg = "Désolé, une erreur de connexion est survenue.";
       speakText(errorMsg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Activer ou désactiver la session globale
+  // Gérer la session active
   const toggleSession = () => {
     if (!isSessionActive) {
       setIsSessionActive(true);
       isSessionActiveRef.current = true;
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (e) {}
-      }
+      startListening();
     } else {
       setIsSessionActive(false);
       isSessionActiveRef.current = false;
@@ -207,8 +234,14 @@ export const CVChat = () => {
     <div className="flex flex-col items-center justify-between min-h-[100dvh] bg-[#F4F4F6] text-slate-800 p-4 sm:p-6 font-sans select-none box-border">
       {/* Zone centrale */}
       <main className="flex-1 flex flex-col items-center justify-center max-w-xl w-full text-center py-4">
-        {/* L'Orbe Violet */}
-        <div className="relative flex items-center justify-center my-6 sm:my-10">
+        {/* L'Orbe Violet (Cliquable pour stopper la parole) */}
+        <div
+          onClick={isSpeaking ? stopSpeaking : undefined}
+          title={isSpeaking ? "Cliquez pour interrompre" : ""}
+          className={`relative flex items-center justify-center my-6 sm:my-10 ${
+            isSpeaking ? "cursor-pointer" : ""
+          }`}
+        >
           {isSpeaking && (
             <>
               <div className="absolute w-60 h-60 sm:w-80 sm:h-80 rounded-full bg-purple-300/40 animate-ping duration-1000"></div>
@@ -221,9 +254,9 @@ export const CVChat = () => {
           )}
 
           <div
-            className={`relative w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-indigo-300 via-purple-400 to-purple-600 shadow-xl overflow-hidden transition-all duration-500 flex items-center justify-center ${
+            className={`relative w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-gradient-to-br from-indigo-300 via-purple-400 to-purple-600 shadow-xl overflow-hidden transition-all duration-300 flex items-center justify-center ${
               isSpeaking
-                ? "scale-105 shadow-purple-400/50 shadow-2xl"
+                ? "scale-105 shadow-purple-400/50 shadow-2xl ring-4 ring-purple-300/50"
                 : "hover:scale-[1.02]"
             }`}
           >
@@ -233,7 +266,7 @@ export const CVChat = () => {
             >
               <path
                 fill="currentColor"
-                d="M0,160L80,176C160,192,320,224,480,213.3C640,203,800,149,960,138.7C1120,128,1280,160,1360,176L1440,192L1440,320L1360,320C1280,320,1120,320,960,320C320,320,160,320,0,320Z"
+                d="M0,160L80,176C160,192,320,224,480,213.3C640,203,800,149,960,138.7C1120,128,1280,160,1360,176L1440,192L1440,320L1360,320C320,320,160,320,0,320Z"
               ></path>
             </svg>
           </div>
@@ -245,8 +278,8 @@ export const CVChat = () => {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-sm sm:max-w-md px-2">
-          Lancez la discussion pour explorer mon CV et mes réalisations à la
-          voix. Options vocales disponibles dans le menu.
+          Posez vos questions pour découvrir mon parcours. Dites **"Stop"** ou
+          cliquez sur la sphère pour interrompre l'assistant à tout moment.
         </p>
       </main>
 
@@ -255,7 +288,7 @@ export const CVChat = () => {
 
       {/* Barre de contrôle du bas */}
       <footer className="bg-white rounded-2xl shadow-lg border border-slate-100 px-3 sm:px-4 py-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 max-w-lg w-full">
-        {/* Sélecteur de Voix Dynamique */}
+        {/* Sélecteur de Voix / Statut */}
         <div className="flex items-center space-x-1.5 sm:space-x-2 text-slate-600 text-xs font-medium px-2 py-1 rounded-lg hover:bg-slate-50 transition-colors max-w-[65%] sm:max-w-none">
           <svg
             className="w-4 h-4 text-slate-500 flex-shrink-0"
@@ -271,15 +304,17 @@ export const CVChat = () => {
             />
           </svg>
 
-          {/* Affichage du Statut d'état OU du Menu Déroulant */}
           {isLoading ? (
             <span className="text-[11px] sm:text-xs text-purple-600 font-semibold animate-pulse">
               Réflexion...
             </span>
           ) : isSpeaking ? (
-            <span className="text-[11px] sm:text-xs text-indigo-600 font-semibold animate-pulse">
-              Ruphin parle...
-            </span>
+            <button
+              onClick={stopSpeaking}
+              className="text-[11px] sm:text-xs text-red-500 font-semibold hover:underline flex items-center space-x-1"
+            >
+              <span>Ruphin parle... (Cliquer pour stopper)</span>
+            </button>
           ) : isListening ? (
             <span className="text-[11px] sm:text-xs text-emerald-600 font-semibold animate-pulse">
               Écoute en cours...
@@ -304,26 +339,6 @@ export const CVChat = () => {
 
         {/* Boutons d'action */}
         <div className="flex items-center space-x-2 ml-auto">
-          <button
-            type="button"
-            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
-            title="Désactiver la vidéo/caméra"
-          >
-            <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-          </button>
-
           <button
             onClick={toggleSession}
             className={`flex items-center space-x-1.5 sm:space-x-2 px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-xs font-semibold text-white shadow-md transition-all ${
