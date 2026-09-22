@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { CVChat } from './pages/CVChat'
+import { CVChat } from './components/CVChat'
 
 export default function App() {
   return (
